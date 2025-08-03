@@ -4,10 +4,11 @@
 
 const std = @import("std");
 const log = std.log;
+const mem = std.mem;
 pub const std_options = std.Options{ .log_level = .debug };
 
-const porkbun = @import("porkbun.zig");
 const config = @import("config.zig");
+const porkbun = @import("porkbun.zig");
 
 pub fn main() !void {
     // var debug_alloc = std.heap.DebugAllocator(.{}).init;
@@ -30,40 +31,24 @@ fn updateRecords(alloc: std.mem.Allocator) !void {
     var client = porkbun.new(alloc);
     defer client.deinit();
 
-    log.debug("Getting IPv4", .{});
-    const ip_v4 = try client.getIpV4();
-    log.info("IPv4: '{s}'", .{ip_v4});
+    if (config.ip_v4) {
+        log.debug("Getting IPv4", .{});
+        const ip_v4 = try client.getIpV4();
+        log.info("IPv4: '{s}'", .{ip_v4});
 
-    log.debug("Getting IPv6", .{});
-    const ip_v6 = try client.getIpV6();
-    log.info("IPv6: '{s}'", .{ip_v6});
-
-    for (config.records) |record| {
-        log.debug("Checking '{s}' record for '{s}.{s}'", .{ record.type, record.name, config.domain });
-        const ip = if (std.mem.eql(u8, record.type, "A")) ip_v4 else ip_v6;
-
-        const dns_record = try client.getDnsRecord(config.domain, &record);
-
-        if (dns_record == null) {
-            log.info(
-                "Creating '{s}' record for '{s}.{s}'. IP: {s}",
-                .{ record.type, record.name, config.domain, ip },
-            );
-
-            try client.createDnsRecord(config.domain, &record, ip);
-            continue;
+        for (config.sub_domains) |record| {
+            try client.checkRecord(&porkbun.Record{ .name = record, .type = "A", .content = ip_v4 });
         }
+    }
 
-        if (std.mem.eql(u8, dns_record.?.content, ip)) {
-            continue;
+    if (config.ip_v6) {
+        log.debug("Getting IPv6", .{});
+        const ip_v6 = try client.getIpV6();
+        log.info("IPv6: '{s}'", .{ip_v6});
+
+        for (config.sub_domains) |record| {
+            try client.checkRecord(&porkbun.Record{ .name = record, .type = "AAAA", .content = ip_v6 });
         }
-
-        log.info(
-            "Updating '{s}' record for '{s}.{s}'. IP: '{s}' -> '{s}'",
-            .{ record.type, record.name, config.domain, dns_record.?.content, ip },
-        );
-
-        try client.updateDnsRecord(config.domain, &record, ip);
     }
     log.info("Done", .{});
 }

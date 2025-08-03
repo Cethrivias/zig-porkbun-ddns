@@ -1,6 +1,9 @@
 const std = @import("std");
+const json = std.json;
+const log = std.log;
+const mem = std.mem;
+
 const config = @import("config.zig");
-const types = @import("types.zig");
 
 pub fn new(allocator: std.mem.Allocator) Client {
     return Client{
@@ -23,7 +26,7 @@ pub const Client = struct {
         var res_body = std.ArrayList(u8).init(self.allocator);
         defer res_body.deinit();
 
-        const payload = try std.json.stringifyAlloc(self.allocator, req, .{});
+        const payload = try json.stringifyAlloc(self.allocator, req, .{});
 
         _ = try self.client.fetch(.{
             .method = .POST,
@@ -32,9 +35,11 @@ pub const Client = struct {
             .response_storage = .{ .dynamic = &res_body },
         });
 
-        const json = try std.json.parseFromSlice(T, self.allocator, res_body.items, .{ .ignore_unknown_fields = true });
+        const parsed_res = try json.parseFromSlice(T, self.allocator, res_body.items, .{
+            .ignore_unknown_fields = true,
+        });
 
-        return json.value;
+        return parsed_res.value;
     }
 
     fn get(self: *Client, url: []const u8) ![]const u8 {
@@ -70,22 +75,11 @@ pub const Client = struct {
         return ip;
     }
 
-    pub fn getDnsRecords(self: *Client, domain_name: []const u8) ![]DnsResponse {
-        const url = try std.fmt.allocPrint(
-            self.allocator,
-            "https://api.porkbun.com/api/json/v3/dns/retrieve/{s}",
-            .{domain_name},
-        );
-        const res = try self.post(GetDnsResponse, url, self.config);
-
-        return res.records;
-    }
-
-    pub fn getDnsRecord(self: *Client, domain_name: []const u8, record: *const types.Record) !?DnsResponse {
+    pub fn getDnsRecord(self: *Client, record: *const Record) !?DnsResponse {
         const url = try std.fmt.allocPrint(
             self.allocator,
             "https://api.porkbun.com/api/json/v3/dns/retrieveByNameType/{s}/{s}/{s}",
-            .{ domain_name, record.type, record.name },
+            .{ config.domain, record.type, record.name },
         );
 
         const res = try self.post(GetDnsResponse, url, self.config);
@@ -93,42 +87,67 @@ pub const Client = struct {
         return if (res.records.len != 0) res.records[0] else null;
     }
 
-    pub fn createDnsRecord(self: *Client, domain_name: []const u8, record: *const types.Record, ip: []const u8) !void {
+    pub fn createDnsRecord(self: *Client, record: *const Record) !void {
         const url = try std.fmt.allocPrint(
             self.allocator,
             "https://api.porkbun.com/api/json/v3/dns/create/{s}",
-            .{domain_name},
+            .{config.domain},
         );
         const req = DnsRequest{
             .apikey = self.config.apikey,
             .secretapikey = self.config.secretapikey,
             .name = record.name,
             .type = record.type,
-            .content = ip,
+            .content = record.content,
         };
+
         _ = try self.post(Response, url, req);
     }
 
-    pub fn updateDnsRecord(self: *Client, domain_name: []const u8, record: *const types.Record, ip: []const u8) !void {
+    pub fn updateDnsRecord(self: *Client, record: *const Record) !void {
         const url = try std.fmt.allocPrint(
             self.allocator,
             "https://api.porkbun.com/api/json/v3/dns/editByNameType/{s}/{s}/{s}",
-            .{ domain_name, record.type, record.name },
+            .{ config.domain, record.type, record.name },
         );
 
         _ = try self.post(Response, url, .{
             .apikey = self.config.apikey,
             .secretapikey = self.config.secretapikey,
-            .content = ip,
+            .content = record.content,
             .ttl = "600",
         });
     }
+
+    pub fn checkRecord(self: *Client, record: *const Record) !void {
+        log.debug("Checking '{s}' record for '{s}.{s}'", .{ record.type, record.name, config.domain });
+
+        const dns_record = try self.getDnsRecord(record);
+
+        if (dns_record == null) {
+            log.info(
+                "Creating '{s}' record for '{s}.{s}'. IP: {s}",
+                .{ record.type, record.name, config.domain, record.content },
+            );
+
+            try self.createDnsRecord(record);
+            return;
+        }
+
+        if (mem.eql(u8, dns_record.?.content, record.content)) {
+            return;
+        }
+
+        log.info(
+            "Updating '{s}' record for '{s}.{s}'. IP: '{s}' -> '{s}'",
+            .{ record.type, record.name, config.domain, dns_record.?.content, record.content },
+        );
+
+        try self.updateDnsRecord(record);
+    }
 };
 
-const Config = struct {
-    apikey: []const u8,
-    secretapikey: []const u8,
-};
+const Config = struct { apikey: []const u8, secretapikey: []const u8 };
 
 const Response = struct { status: []u8 };
 
@@ -154,3 +173,9 @@ pub const DnsRequest = struct {
 };
 
 pub const GetDnsResponse = struct { status: []u8, records: []DnsResponse };
+
+pub const Record = struct {
+    name: []const u8,
+    type: []const u8,
+    content: []const u8,
+};

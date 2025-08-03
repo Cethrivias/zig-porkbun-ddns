@@ -1,12 +1,30 @@
 services:
-  ddns:
+  ddns_ipv4:
     image: cethrivias/zig-porkbun-ddns:latest
-    # environment:
     # All variables should support `_FILE` suffix but I've not tested it
-    #   - API_KEY=[SECRET]
-    #   - SECRET_KEY=[SECRET]
-    #   - DOMAIN=cethrivias.me
-    #   - SUB_DOMAINS=*,
+    environment:
+      - DOMAIN=cethrivias.me
+      # Comma separated list. Here: '*' and ''
+      - SUB_DOMAINS=*,
+      # IP_V4 is enabled by default. Put any other value to disable it
+      - IP_V4=TRUE
+      # Seconds
+      - INTERVAL=600
+      # Specified in the .env
+      # - API_KEY=[SECRET]
+      # - SECRET_KEY=[SECRET]
+    env_file:
+      - .env
+
+  ddns_ipv6:
+    image: cethrivias/zig-porkbun-ddns:latest
+    environment:
+      - DOMAIN=cethrivias.me
+      # No commas, so only 'qnap' here
+      - SUB_DOMAINS=qnap
+      - IP_V4=nope
+      - IP_V6=TRUE
+      - INTERVAL=600
     env_file:
       - .env
     # You can also create an IPv6 enabled docker network.
