@@ -1,0 +1,15 @@
+services:
+  ddns:
+    image: cethrivias/zig-porkbun-ddns:latest
+    # environment:
+    # All variables should support `_FILE` suffix but I've not tested it
+    #   - API_KEY=[SECRET]
+    #   - SECRET_KEY=[SECRET]
+    #   - DOMAIN=cethrivias.me
+    #   - SUB_DOMAINS=*,
+    env_file:
+      - .env
+    # You can also create an IPv6 enabled docker network.
+    # But some locked down platforms don't play nice with it.
+    # host mode was more reliable for me
+    network_mode: "host"
