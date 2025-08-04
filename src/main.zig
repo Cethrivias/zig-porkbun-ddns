@@ -17,9 +17,16 @@ pub fn main() !void {
     const alloc = std.heap.smp_allocator;
 
     while (true) {
-        try config.init(alloc);
+        config.init(alloc) catch |err| {
+            log.err("Could not init config: {}", .{err});
+            std.time.sleep(5 * std.time.ns_per_s);
 
-        try updateRecords(alloc);
+            continue;
+        };
+
+        updateRecords(alloc) catch |err| {
+            log.err("Could not update records: {}", .{err});
+        };
 
         std.time.sleep(config.interval_ns);
     }
